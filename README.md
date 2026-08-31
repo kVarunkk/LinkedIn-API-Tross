@@ -166,6 +166,17 @@ curl -X POST http://localhost:8000/profile \
 }
 ```
 
+**Troubleshooting — if you get any error (400 / 502):**
+The most common cause is invalid or expired `X-Li-At` / `X-JSessionID` cookies. LinkedIn logs you out after excessive usage, IP mismatch, or rapid requests, so your cookies are likely the problem.
+
+Fix:
+1. Log in to `https://www.linkedin.com` again in your browser.
+2. Open DevTools (F12) → Network → refresh.
+3. Copy fresh `li_at` and `JSESSIONID` cookie values.
+4. Pass them in `X-Li-At` and `X-JSessionID` headers and retry.
+
+Only the session cookies need rotation — no server-side changes required.
+
 ## Response Schema (`ParsedProfile`)
 
 | Field                               | Type                                                              | Source in LinkedIn data                                      |
@@ -271,7 +282,60 @@ LinkedIn is migrating from **Voyager REST/GraphQL** to **SDUI (Server-Driven UI)
 └── README.md
 ```
 
+## Deployed URL
+
+- **Live app**: `https://linkedin-api-tross-785917985023.europe-west1.run.app/`
+- **Swagger docs**: `https://linkedin-api-tross-785917985023.europe-west1.run.app/docs`
+- **Health check**: `https://linkedin-api-tross-785917985023.europe-west1.run.app/health`
+- **POST /profile example** (use your own cookies):
+
+```bash
+curl -X POST https://linkedin-api-tross-785917985023.europe-west1.run.app/profile \
+  -H "Content-Type: application/json" \
+  -H "X-Li-At: YOUR_LI_AT" \
+  -H "X-JSessionID: ajax:YOUR_ID" \
+  -d '{"profile_url":"https://linkedin.com/in/varunkumawat"}'
+```
+
 ## Deployment (HTTPS Public)
+
+### Cloud Run (Google Cloud) — current
+
+The included `Dockerfile` deploys to Cloud Run. From the project root:
+
+```bash
+# 1. Build
+gcloud builds submit --tag gcr.io/PROJECT_ID/linkedin-api
+
+# 2. Deploy
+gcloud run deploy linkedin-api \
+  --image gcr.io/PROJECT_ID/linkedin-api \
+  --platform managed \
+  --region europe-west1 \
+  --allow-unauthenticated \
+  --port 8080
+```
+
+The container reads `PORT` from the environment and binds to it (defaults to 8080). Set `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` only if you want env-based fallback; recommended is per-request `X-Li-At` / `X-JSessionID` headers.
+
+### Local Docker (run the same image)
+
+```bash
+# Build
+docker build -t linkedin-api .
+
+# Run
+docker run --rm -p 8080:8080 linkedin-api
+
+# Test
+curl -X POST http://localhost:8080/profile \
+  -H "Content-Type: application/json" \
+  -H "X-Li-At: YOUR_LI_AT" \
+  -H "X-JSessionID: ajax:YOUR_ID" \
+  -d '{"profile_url":"https://linkedin.com/in/varunkumawat"}'
+```
+
+### Other platforms (Render / Heroku / VPS)
 
 ```yaml
 # Example: deploy to Render / Heroku / VPS
@@ -279,7 +343,7 @@ buildCommand: pip install -r requirements.txt
 startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-Add HTTPS via proxy (nginx / Cloudflare / AWS ALB). Set `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` in the platform's secret manager if using env fallback.
+Or use the included `Dockerfile` directly on any container host (Fly.io, Railway, ECS, etc.). Add HTTPS via proxy (nginx / Cloudflare / AWS ALB).
 
 ## Security & Ethics
 
@@ -287,7 +351,3 @@ Add HTTPS via proxy (nginx / Cloudflare / AWS ALB). Set `LINKEDIN_LI_AT` / `LINK
 - Session cookies are passed per-request via headers — no server-side persistence.
 - Only reads public profile data — no mutations, no scraping beyond REST endpoint.
 - Users are responsible for complying with LinkedIn Terms of Service.
-
-## License
-
-MIT
